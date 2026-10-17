@@ -5,11 +5,8 @@
 
 #include <avr/io.h>
 #include <avr/eeprom.h>
-#include <util/delay.h>
 #include <avr/interrupt.h>
 #include <bool.h>
-
-#include "rcc.h"
 
 #include "gpio.h"
 #include "tim.h"
@@ -19,9 +16,6 @@
 #include "SW_INPUT/input.h"
 
 #include "sw_ledlight_manage.h"
-
-GPIO_EXTI_t LEDLIGHT_trigger;
-
 
 // -------------------------- Private data -------------------------------
 static uint8_t measureStatus = adc_status_init;
@@ -44,18 +38,6 @@ void LEDLIGHT_more_light(void) {
     if ( ++brightIndex == BRIGHT_LEVEL_MAX + 1 ) brightIndex = BRIGHT_LEVEL_MIN;
     LEDLIGHT_bright_set( LED_LOW_POWER,  brightIndex );
     LEDLIGHT_bright_set( LED_HIGH_POWER, brightIndex );
-}
-
-void LEDLIGHT_power_down(void) {
-    TIMER_pwm_out_disable( LED_LOW_POWER );
-    TIMER_pwm_out_disable( LED_HIGH_POWER );
-    TIMER_stop();
-
-    volatile uint8_t *key_ctrl = KEY_PORT.PIN0CTRL + __builtin_ctz(KEY_PIN);
-    *key_ctrl = PORT_PULLUPEN_bm | PORT_ISC_LEVEL_gc;
-
-    gpio_pin_IMPULSES( LED_DIAG_PORT, LED_DIAG_PIN, 1 );
-    sw_led_off();
 }
 
 void LEDLIGHT_mode_set( uint8_t mode ) {
@@ -126,32 +108,8 @@ void LEDLIGHT_init(void) {
 
 	INPUT_EVENTS_cb_reg( EVENT_KEY1_SHORT_PRESS,	LEDLIGHT_mode_switch );
 	INPUT_EVENTS_cb_reg( EVENT_KEY1_MEDIUM_PRESS,	LEDLIGHT_more_light );
-	INPUT_EVENTS_cb_reg( EVENT_KEY1_VLONG_PRESS,	LEDLIGHT_power_down );
 	INPUT_EVENTS_cb_reg( EVENT_KEY1_DOUBLE_PRESS,	sw_led_blink );
 	INPUT_EVENTS_cb_reg( EVENT_KEY1_REPEAT_PRESS,	sw_led_blink );
-}
-
-void LEDLIGHT_wakeup(void) {
-    measureStatus = adc_status_init;
-    ADC_enable();
-
-    ledMode = eeprom_read_byte( &eeprom_MODE );
-    LEDLIGHT_mode_set( ledMode );
-    TIMER_start();
-
-    gpio_pin_cfg( KEY_PORT,          KEY_PIN,           gpio_mode_in_PU );
-    gpio_pin_cfg( LED_DIAG_PORT,     LED_DIAG_PIN,      gpio_mode_output_PP );
-    TIMER_pwm_pins_cfg( gpio_mode_output_PP );
-
-    _delay_ms(1000);
-    if ( gpio_pin_READ( KEY_PORT, KEY_PIN) == 0 ) {
-        brightIndex = BRIGHT_LEVEL_MAX;
-        LEDLIGHT_bright_set( LED_LOW_POWER,  brightIndex );
-        LEDLIGHT_bright_set( LED_HIGH_POWER, brightIndex );
-    }
-    _delay_ms(1000);
-
-    sw_led_on();
 }
 
 static int8_t counter = 0;

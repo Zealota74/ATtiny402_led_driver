@@ -47,8 +47,8 @@ uses a small set of reusable, STM32-style peripheral wrappers (`gpio`, `tim`,
   reference against VDD to compute the supply voltage, with 4-sample hardware
   accumulation and threshold hysteresis. When the battery is low, the
   LEDs are switched off and locked, and the status LED flashes a warning.
-- **Low-power support**: PWM and timer shutdown, button wake-up interrupt, Power-Down
-  sleep helper and an RTC/PIT periodic wake-up source.
+- **Power-Down sleep (draft)**: `SW_POWER/power_down.c` puts the MCU to sleep after a very
+  long press and wakes it on the next press, with RTC-timed debounce. Not integrated yet.
 - **Non-blocking design**: 10 ms system tick, software timers and an event/callback
   dispatcher. The main loop never busy-waits.
 
@@ -133,15 +133,17 @@ Everything is controlled with a single button. Gesture timing is configured in
 | Double click | Two short clicks within 200 ms | `DOUBLE_PRESS` | Toggle status LED |
 | Medium press | Released after ~500–880 ms | `MEDIUM_PRESS` | Next brightness level (6 levels, wraps around) |
 | Hold | > 880 ms, then every 100 ms | `KEY_REPEAT` | Toggle status LED (visual feedback while holding) |
-| Very long press | ~2.9 s (20 repeat periods) | `VLONG_PRESS` | Power down: PWM off, timer stopped, button set up as wake-up source |
+| Very long press | ~2.9 s (20 repeat periods) | `VLONG_PRESS` | Not used yet; reserved for `POWER_DOWN_request()` (draft) |
 
 Callbacks are registered in `LEDLIGHT_init()`, so you can remap a gesture with one line:
 
 ```c
 INPUT_EVENTS_cb_reg( EVENT_KEY1_SHORT_PRESS,  LEDLIGHT_mode_switch );
 INPUT_EVENTS_cb_reg( EVENT_KEY1_MEDIUM_PRESS, LEDLIGHT_more_light  );
-INPUT_EVENTS_cb_reg( EVENT_KEY1_VLONG_PRESS,  LEDLIGHT_power_down  );
 ```
+
+`POWER_DOWN_init()` (draft, commented out in `main()`) registers `POWER_DOWN_request()`
+for `VLONG_PRESS`.
 
 ### Battery protection
 
@@ -184,7 +186,7 @@ flowchart TD
     ADCEV -->|callback| LL
     LL --> TIM["tim.c — TCA0 PWM"]
     LL --> EE["EEPROM<br/>mode / brightness"]
-    LL --> RCC["rcc.c — clock, sleep, PIT"]
+    IN -.->|VLONG_PRESS, draft| PD["power_down.c<br/>Power-Down + RTC"]
     TIM --> GPIO["gpio.c — PORTA"]
 ```
 
@@ -206,8 +208,8 @@ flowchart TD
 | TCA0 | Single-slope PWM, `PER = 255`, CLK/16, about 814 Hz; also clocks TCB0 |
 | TCB0 | Periodic interrupt every 10 ms (`CCMP = 2083`), system tick |
 | ADC0 + VREF | VDD reference, input = internal 1.1 V, CLK/32 (~104 kHz), 4-sample accumulation, RESRDY interrupt |
-| RTC / PIT | Periodic wake-up helpers (`WDT_enable()` / `WDT_disable()`) |
-| SLPCTRL | Power-Down sleep helper (`RCC_sleep_enable()`) |
+| RTC | INT1K (1.024 kHz) delays for wake-up debounce, Standby (draft `power_down.c`) |
+| SLPCTRL | Power-Down on `VLONG_PRESS`, wake-up by LEVEL on `KEY_PIN` (draft `power_down.c`) |
 | EEPROM | 3 bytes: validity marker, brightness index, light mode |
 | Flash / RAM | ~2.5 kB / 4 kB flash, ~55 B / 256 B RAM (command line below, `--gc-sections`) |
 
@@ -220,10 +222,11 @@ flowchart TD
 │   ├── sw_mcu_conf.h           # common macros (SET_BIT, MODIFY_REG, INLINE…)
 │   └── bool.h
 ├── libs/
-│   ├── SW_AVR_PERIPHS/         # gpio, tim (TCA0 PWM), adc (ADC0/VREF), rcc (clock/sleep/PIT)
+│   ├── SW_AVR_PERIPHS/         # gpio, tim (TCA0 PWM), adc (ADC0/VREF), rcc (clock)
 │   ├── SW_TIMERS/              # 10 ms tick on TCB0 + software timers + millis()
 │   ├── SW_INPUT/               # input dispatcher + KEYBOARD gesture state machine
 │   ├── SW_LEDLIGHT/            # flashlight logic: modes, brightness, EEPROM, battery
+│   ├── SW_POWER/               # Power-Down sleep / button wake-up (draft)
 │   └── SW_BOARD/               # status LED / debug blink
 ├── 00_tmp/                     # scratch files, excluded from the build
 ├── hardware/                   # KiCad project (to be added)
@@ -294,8 +297,8 @@ EEPROM defaults are created by the firmware on first boot, so flashing the `.eep
 ## Project status / TODO
 
 - [ ] Verify the default pin assignment and the battery thresholds on real hardware.
-- [ ] Hook up Power-Down sleep, wake-up (`RCC_sleep_enable()`, `LEDLIGHT_wakeup()`) and
-      a PORTA wake-up ISR.
+- [ ] Integrate `SW_POWER/power_down.c`: switch PWM/ADC off before sleep, restore them
+      after wake-up, enable `POWER_DOWN_init()` in `main()`.
 - [ ] Call `EEPROM_update()` when settings change.
 - [ ] Add the KiCad project and images to `hardware/` and `docs/images/`.
 - [ ] Choose a license.

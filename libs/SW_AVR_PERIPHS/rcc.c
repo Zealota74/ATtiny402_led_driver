@@ -6,19 +6,12 @@
  */
 
 
-#include <avr/sleep.h>
-#include <avr/power.h>
-#include <avr/wdt.h>
-#include "avr/interrupt.h"
-#include <util/delay.h>
+
+#include <avr/io.h>
 
 #include "gpio.h"
-#include "adc.h"
-#include "tim.h"
 
 #include "rcc.h"
-
-static uint8_t powerState = STATE_PCINT_DEBOUNCE;
 
 void RCC_Clock_Init(void) {
     // 1. Odblokowanie rejestrów chronionych (Configuration Change Protection)
@@ -60,40 +53,4 @@ void RCC_Clock_Init(void) {
         CPU_CCP = CCP_IOREG_gc;
         CLKCTRL.MCLKCTRLB = CLKCTRL_PDIV_16X_gc | CLKCTRL_PEN_bm; // Dzielnik 16X + Preskaler Enable [source: 1.4.1]
     #endif
-}
-
-static inline void RCC_sleep_cpu(void) {
-    __asm__ __volatile__ ( "sleep" "\n\t" :: );
-}
-
-void RCC_sleep_enable( uint8_t mode ) {
-    gpio_pin_cfg( KEY_PORT,         KEY_PIN,            gpio_mode_in_floating );
-    gpio_pin_cfg( LED_DIAG_PORT,    LED_DIAG_PIN,       gpio_mode_in_floating );
-    TIMER_pwm_pins_cfg( gpio_mode_in_floating );
-
-    powerState = STATE_PCINT_WAKE;
-    ADC_disable();
-
-    SLPCTRL.CTRLA = mode | SLPCTRL_SEN_bm;
-
-    sei();
-    RCC_sleep_cpu();                         // Idziemy spaæ w Power-Down
-    SLPCTRL.CTRLA &= ~SLPCTRL_SEN_bm;
-}
-
-void RCC_sleep_disable(void) {
-    SLPCTRL.CTRLA &= ~SLPCTRL_SEN_bm;
-}
-
-
-
-// Mapowanie funkcji WDT_enable / WDT_disable na sprzêtowy modu³ PIT w ATtiny402
-void WDT_enable( uint8_t time_gc ) {
-    RTC.PITINTCTRL = RTC_PI_bm;             // W³¹czenie przerwania Periodic Interrupt
-    RTC.PITCTRLA = time_gc | RTC_PITEN_bm;  // Uruchomienie licznika PIT (np. na 64ms)
-}
-
-void WDT_disable(void) {
-    RTC.PITCTRLA &= ~RTC_PITEN_bm;          // Wy³¹czenie licznika PIT
-    RTC.PITINTCTRL &= ~RTC_PI_bm;           // Wy³¹czenie przerwaniowej flagi PIT
 }

@@ -17,6 +17,7 @@
 #include "SW_TIMERS/sw_soft_timers.h"
 #include "SW_INPUT/input.h"
 #include "SW_LEDLIGHT/sw_ledlight_manage.h"
+#include "SW_POWER/power_down.h"
 
 
 int main(void) {
@@ -30,11 +31,12 @@ int main(void) {
 	ADC_init();
 	adc_event_cb_reg( LEDLIGHT_check_battery );
 
+//	POWER_DOWN_init();	// draft module, not integrated yet
+
 //	sw_led_on();
 
 	sei();
 //	LEDLIGHT_mode_set( LED_MODE_ALL_OFF );
-//	LEDLIGHT_power_down();	// After reset
 //	DEBUG_blink_start( LED_BLINK_INFINITE, 1000 );
 
 	while (1) {
