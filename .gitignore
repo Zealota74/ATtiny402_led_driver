@@ -1,0 +1,11 @@
+# Eclipse build output
+/Release/
+/Debug/
+/Release*/
+*.o
+*.d
+*.elf
+*.hex
+*.eep
+*.lss
+*.map
