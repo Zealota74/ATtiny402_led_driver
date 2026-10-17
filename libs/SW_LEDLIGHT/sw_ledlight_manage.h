@@ -36,23 +36,12 @@ enum {
     LED_MODE_NO_SWITCH = 6
 };
 
-// Sta³e czasu dla nowego Watchdoga w ATtiny402 (WDT.CTRLA)
-#define WDT_PERIOD_64MS    WDT_PERIOD_64CLK_gc
-#define WDT_PERIOD_8S      WDT_PERIOD_8KCLK_gc
-
 // Publiczne API modu³u zgodne z oryginalnym interfejsem
 extern void LEDLIGHT_init(void);
 extern void EEPROM_update(void);
 extern void LEDLIGHT_mode_lock( bool lock );
 extern void LEDLIGHT_check_battery(void);
 extern void LEDLIGHT_mode_set( uint8_t mode );
-extern void LEDLIGHT_power_down(void);
-extern void LEDLIGHT_wakeup(void);
-
-extern void RCC_sleep_enable( uint8_t mode );
-extern void RCC_sleep_disable(void);
-extern void WDT_enable( uint8_t time_gc );
-extern void WDT_disable(void);
 
 extern void LEDLIGHT_more_light(void);
 
