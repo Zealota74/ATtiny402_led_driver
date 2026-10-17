@@ -210,8 +210,9 @@ Include paths are relative to the project (`${ProjDirPath}`), so no path editing
 
 ### Command line (avr-gcc)
 
-ATtiny402 support needs avr-gcc ≥ 8 with matching device files, or any
-avr-gcc together with the Microchip
+ATtiny402 support needs an avr-gcc/avr-libc build that knows the tinyAVR 0-series
+(e.g. the toolchain bundled with Microchip Studio / MPLAB), or any avr-gcc together
+with the Microchip
 [ATtiny_DFP](https://packs.download.microchip.com/) device pack:
 
 ```sh
