@@ -115,6 +115,10 @@ assigned in [`inc/ATTINY402_led_driver.h`](inc/ATTINY402_led_driver.h); `tim.c`,
 #define LED_HI_PWM    PWM_WO2     // PA2
 ```
 
+These options, as well as `KEY_PIN` and `LED_DIAG_PIN`, can also be overridden from the
+project symbols without editing the header, e.g. `-DPWM_WO0_ALT=1 -DLED_DIAG_PIN=PA6`
+(Eclipse: *Properties → C/C++ Build → Settings → AVR Compiler → Symbols*).
+
 The build fails with a clear message (`_Static_assert` in `tim.c`) when both LEDs use the
 same output or a PWM pin collides with `KEY_PIN`, `LED_DIAG_PIN` or UPDI (PA0).
 
