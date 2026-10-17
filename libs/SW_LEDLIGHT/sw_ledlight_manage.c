@@ -37,12 +37,7 @@ uint8_t EEMEM eeprom_MODE      = EEPROM_LEDMODE_INIT;
 
 // ----------------------------- Private functions ---------------------------
 static void LEDLIGHT_bright_set( uint8_t ledNum, uint8_t brightLoc ) {
-    brightLoc = BrightGamma[ brightLoc ];
-    if ( ledNum == LED_HIGH_POWER )
-        TIMER_pwm_write( TIMER_CHB, brightLoc );
-    else
-    if ( ledNum == LED_LOW_POWER )
-        TIMER_pwm_write( TIMER_CHA, brightLoc );
+    TIMER_pwm_write( ledNum, BrightGamma[ brightLoc ] );
 }
 
 void LEDLIGHT_more_light(void) {
@@ -52,8 +47,8 @@ void LEDLIGHT_more_light(void) {
 }
 
 void LEDLIGHT_power_down(void) {
-    TIMER_pwm_out_disable( TIMER_PWM1A_EN );
-    TIMER_pwm_out_disable( TIMER_PWM1B_EN );
+    TIMER_pwm_out_disable( LED_LOW_POWER );
+    TIMER_pwm_out_disable( LED_HIGH_POWER );
     TIMER_stop();
 
     volatile uint8_t *key_ctrl = KEY_PORT.PIN0CTRL + __builtin_ctz(KEY_PIN);
@@ -66,20 +61,20 @@ void LEDLIGHT_power_down(void) {
 void LEDLIGHT_mode_set( uint8_t mode ) {
     switch ( mode ) {
         case LED_MODE_ALL_OFF:
-            TIMER_pwm_out_disable( TIMER_PWM1A_EN );
-            TIMER_pwm_out_disable( TIMER_PWM1B_EN );
+            TIMER_pwm_out_disable( LED_LOW_POWER );
+            TIMER_pwm_out_disable( LED_HIGH_POWER );
             break;
         case LED_MODE_LOW:
-            TIMER_pwm_out_enable ( TIMER_PWM1A_EN );
-            TIMER_pwm_out_disable( TIMER_PWM1B_EN );
+            TIMER_pwm_out_enable ( LED_LOW_POWER );
+            TIMER_pwm_out_disable( LED_HIGH_POWER );
             break;
         case LED_MODE_HIGH:
-            TIMER_pwm_out_disable( TIMER_PWM1A_EN );
-            TIMER_pwm_out_enable ( TIMER_PWM1B_EN );
+            TIMER_pwm_out_disable( LED_LOW_POWER );
+            TIMER_pwm_out_enable ( LED_HIGH_POWER );
             break;
         case LED_MODE_LOW_HIGH:
-            TIMER_pwm_out_enable ( TIMER_PWM1A_EN );
-            TIMER_pwm_out_enable ( TIMER_PWM1B_EN );
+            TIMER_pwm_out_enable ( LED_LOW_POWER );
+            TIMER_pwm_out_enable ( LED_HIGH_POWER );
             break;
         default:
             break;
@@ -114,8 +109,8 @@ static void EEPROM_init(void) {
         brightIndex = eeprom_read_byte( &eeprom_GAMMA_LED );
     }
     LEDLIGHT_mode_set( ledMode );
-    TCA0.SINGLE.CMP0 = BrightGamma[ brightIndex ];
-    TCA0.SINGLE.CMP1 = BrightGamma[ brightIndex ];
+    LEDLIGHT_bright_set( LED_LOW_POWER,  brightIndex );
+    LEDLIGHT_bright_set( LED_HIGH_POWER, brightIndex );
 }
 
 // ---------------------------- Public functions ----------------------------
@@ -124,18 +119,7 @@ void EEPROM_update(void) {
     eeprom_update_byte( &eeprom_MODE,      ledMode );
 }
 
-static void LEDLIGHT_pin_init(void) {
-    gpio_pin_cfg( PWM_OUT_PORT, PWM_OUT_PIN_OC1A, gpio_mode_output_PP );
-    gpio_pin_cfg( PWM_OUT_PORT, PWM_OUT_PIN_OC1B, gpio_mode_output_PP );
-    gpio_pin_cfg( PWM_OUT_PORT, PWM_OUT_PIN_OC1C, gpio_mode_output_PP );
-//    gpio_pin_HI( PWM_OUT_PORT, PWM_OUT_PIN_OC1A );
-//    gpio_pin_HI( PWM_OUT_PORT, PWM_OUT_PIN_OC1B );
-//    gpio_pin_HI( PWM_OUT_PORT, PWM_OUT_PIN_OC1C );
-}
-
 void LEDLIGHT_init(void) {
-	LEDLIGHT_pin_init();
-
     TIMER_pwm_init();
     EEPROM_init();
     INPUT_init();
@@ -157,8 +141,7 @@ void LEDLIGHT_wakeup(void) {
 
     gpio_pin_cfg( KEY_PORT,          KEY_PIN,           gpio_mode_in_PU );
     gpio_pin_cfg( LED_DIAG_PORT,     LED_DIAG_PIN,      gpio_mode_output_PP );
-    gpio_pin_cfg( PWM_OUT_PORT,      PWM_OUT_PIN_OC1A,  gpio_mode_output_PP );
-    gpio_pin_cfg( PWM_OUT_PORT,      PWM_OUT_PIN_OC1B,  gpio_mode_output_PP );
+    TIMER_pwm_pins_cfg( gpio_mode_output_PP );
 
     _delay_ms(1000);
     if ( gpio_pin_READ( KEY_PORT, KEY_PIN) == 0 ) {
@@ -173,9 +156,9 @@ void LEDLIGHT_wakeup(void) {
 
 static int8_t counter = 0;
 void LEDLIGHT_check_battery(void) {
-    uint16_t adcOut = ADC_mean_get();
+    uint16_t vddMv = ADC_vdd_mv_get();
 
-    if ( (adcOut < ADC_THRESHOLD_MIN) && (measureStatus == adc_status_under || measureStatus == adc_status_init) ) {
+    if ( (vddMv < VDD_THRESHOLD_MIN_MV) && (measureStatus == adc_status_under || measureStatus == adc_status_init) ) {
         if (counter++ == 10) {
             counter = 0;
             measureStatus = adc_status_over;
@@ -184,7 +167,7 @@ void LEDLIGHT_check_battery(void) {
             LEDLIGHT_mode_lock( LOCK_MODE_ON );
         }
     }
-    else if ( (adcOut > ADC_THRESHOLD_MAX) && (measureStatus == adc_status_over || measureStatus == adc_status_init) ) {
+    else if ( (vddMv > VDD_THRESHOLD_MAX_MV) && (measureStatus == adc_status_over || measureStatus == adc_status_init) ) {
         if (counter-- == -10)  {
             measureStatus = adc_status_under;
             counter = 0;

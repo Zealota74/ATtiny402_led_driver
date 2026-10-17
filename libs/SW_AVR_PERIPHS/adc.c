@@ -25,7 +25,7 @@ static inline void ADC_single_in_set( uint8_t adcIn ) {
 
 static inline void ADC_prescaller_set( uint8_t psc ) {
     // W serii 0 preskaler i rozdzielczoœæ (10-bit) konfiguruje siê w CTRLC
-    ADC0.CTRLC = psc | ADC_SAMPLEN_1_bm;
+    ADC0.CTRLC = psc | ADC_REF_VDD | ADC_SAMPCAP_bm;
 }
 
 static inline void ADC_isr_enable(void) {
@@ -49,6 +49,12 @@ uint16_t ADC_mean_get(void) {
     return adcRead;
 }
 
+uint16_t ADC_vdd_mv_get(void) {
+    uint16_t res = adcRead;
+    if ( res == 0 ) return 0;
+    return (uint16_t)( ADC_VDD_CALC_CONST / res );
+}
+
 /*********************************************************************************/
 // Nowy, uproszczony wektor przerwania dla serii 0 (Zastêpuje stary ADC_vect)
 ISR( ADC0_RESRDY_vect ) {
@@ -64,14 +70,9 @@ ISR( ADC0_RESRDY_vect ) {
 
 /*********************************************************************************/
 void ADC_init(void) {
-    // 1. Wy³¹czenie bufora cyfrowego na pinie pomiarowym przez modu³ GPIO
-    gpio_pin_cfg( BAT_SENS_PORT, BAT_SENS_PIN, gpio_mode_analog );
-
-    // 2. Konfiguracja napiêcia referencyjnego na 2.50V
-    ADC_vref_selec( ADC_VREF_2_50V_INT );
-
-    // 3. Konfiguracja wejœcia analogowego
-    ADC_single_in_set( ADC_MUX_ADC3_PA3 );
+    // 1-3. VDD measurement: reference = VDD, input = internal 1.1 V (no pin needed)
+    ADC_vref_selec( ADC_VREF_1_10V_INT );
+    ADC_single_in_set( ADC_MUX_INTREF );
 
     // 4. AUTOMATYCZNY PRESKALER ADC (Dba o to, by taktowanie ADC wynosi³o ok. 125 kHz)
     #if F_CPU >= 16000000L
@@ -89,6 +90,7 @@ void ADC_init(void) {
     // 5. Konfiguracja sprzêtowego Burst Mode (Oversampling 4 próbek)
     ADC0.CTRLB = ADC_SAMPNUM_ACC4_gc;
     ADC0.CTRLD = ADC_INITDLY_DLY16_gc; // Bezpieczne opóŸnienie startowe
+    ADC0.SAMPCTRL = 2;                 // +2 CLK_ADC sample length for the internal reference
 
     // 6. W³¹czenie przerwañ oraz samego modu³u ADC
     ADC_isr_enable();

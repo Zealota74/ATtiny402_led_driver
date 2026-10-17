@@ -12,15 +12,16 @@
 #include "adc_defs.h"
 
 /*
- * Skorygowany kalkulator dla VREF = 2.50V (zamiast starego 2.56V):
- * Dzielnik rezystorowy: 4.2V -> 68k | 100k -> 2.50V na wejœciu pinu
- * 4.2V -> 1023 ADC - Maksymalne napiêcie
- * 3.6V -> 2.14V -> 877 ADC
- * 3.4V -> 2.02V -> 828 ADC
- * 3.3V -> 1.96V -> 804 ADC
+ * Supply voltage (VDD = battery) is measured without any external divider:
+ * ADC reference = VDD, ADC input = internal 1.1 V reference.
+ * RES = 4 * 1024 * 1.1 V / VDD  (4 accumulated samples)
+ * VDD [mV] = ADC_VDD_CALC_CONST / RES
  */
-#define ADC_THRESHOLD_MAX   804
-#define ADC_THRESHOLD_MIN   780
+#define ADC_INTREF_MV           1100UL
+#define ADC_VDD_CALC_CONST      ( ADC_INTREF_MV * 1024UL * 4UL )
+
+#define VDD_THRESHOLD_MIN_MV    3200    // below: LEDs off and locked
+#define VDD_THRESHOLD_MAX_MV    3300    // above: LEDs back on
 
 typedef enum {
     ADC_mean_ready,
@@ -38,6 +39,7 @@ extern void ADC_enable(void);
 extern void ADC_disable(void);
 extern void ADC_start_conv(void);
 extern uint16_t ADC_mean_get(void);
+extern uint16_t ADC_vdd_mv_get(void);
 
 extern void adc_event_cb_reg( void (*callback)( void ) );
 extern void ADC_EVENT(void);
