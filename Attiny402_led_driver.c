@@ -6,7 +6,7 @@
  *      Author: Eagle
  */
 
-#include <AVR/interrupt.h>
+#include <avr/interrupt.h>
 #include "bool.h"
 
 #include "rcc.h"
@@ -27,8 +27,8 @@ int main(void) {
 
 	LEDLIGHT_init();
 
-//	ADC_init();
-//	adc_event_cb_reg( LEDLIGHT_check_battery );
+	ADC_init();
+	adc_event_cb_reg( LEDLIGHT_check_battery );
 
 //	sw_led_on();
 
@@ -44,6 +44,7 @@ int main(void) {
 
 		if ( softTimer1 == 0 ) {
 			softTimer1 = 500;
+			ADC_start_conv();
 //			sw_led_blink();
 //			LEDLIGHT_more_light();
 		}

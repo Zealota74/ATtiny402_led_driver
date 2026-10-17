@@ -10,10 +10,14 @@
 // Definicje napiêæ odniesienia mapowane na rejestr VREF.CTRLA
 #define ADC_VREF_VCC         0 // VCC jako napiêcie odniesienia
 #define ADC_VREF_2_50V_INT   VREF_ADC0REFSEL_2V5_gc // Wewnêtrzne stabilne 2.50V (odpowiednik 2.56V)
+#define ADC_VREF_1_10V_INT   VREF_ADC0REFSEL_1V1_gc // Internal 1.10 V, measured against VDD
 
 // Definicje kana³ów wejœciowych mapowane na rejestr ADC0.MUXPOS
 #define ADC_MUX_ADC3_PA3     ADC_MUXPOS_AIN3_gc     // Pin PA3 jako wejœcie analogowe AIN3
 #define ADC_MUX_TEMP         ADC_MUXPOS_TEMPSENSE_gc // Wbudowany czujnik temperatury
+#define ADC_MUX_INTREF       ADC_MUXPOS_INTREF_gc   // Internal reference as ADC input
+
+#define ADC_REF_VDD          ADC_REFSEL_VDDREF_gc   // ADC0.CTRLC: VDD as ADC reference
 
 // Definicje preskalera mapowane na rejestr ADC0.CTRLC
 #define ADC_PSC_DIV_4        ADC_PRESC_DIV4_gc

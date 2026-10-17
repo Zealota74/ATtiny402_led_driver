@@ -1,131 +1,86 @@
 /*
  * tim.c
- * Elastyczna obs�uga TCA0 dla 1, 2 lub 3 kana��w PWM
+ * TCA0 single-slope PWM, 8-bit, up to 3 outputs.
  */
 
 #include <avr/io.h>
 #include "gpio.h"
 #include "tim.h"
 
+// ------------------------ Board pin sanity checks -------------------------
+#define PWM_USED(ch)        ( PWM_USED_MASK & PWM_MASK(ch) )
+#define PWM_PINS_USED       ( ( PWM_USED(PWM_WO0) ? PWM_PIN(PWM_WO0) : 0 ) | \
+                              ( PWM_USED(PWM_WO1) ? PWM_PIN(PWM_WO1) : 0 ) | \
+                              ( PWM_USED(PWM_WO2) ? PWM_PIN(PWM_WO2) : 0 ) )
+
+_Static_assert( LED_LO_PWM != LED_HI_PWM || LED_LO_PWM == PWM_NONE,
+                "LED_LO_PWM and LED_HI_PWM use the same TCA0 output" );
+_Static_assert( ( PWM_PINS_USED & KEY_PIN ) == 0,      "PWM output collides with KEY_PIN" );
+_Static_assert( ( PWM_PINS_USED & LED_DIAG_PIN ) == 0, "PWM output collides with LED_DIAG_PIN" );
+_Static_assert( KEY_PIN != LED_DIAG_PIN,               "KEY_PIN collides with LED_DIAG_PIN" );
+_Static_assert( ( ( PWM_PINS_USED | KEY_PIN | LED_DIAG_PIN ) & PA0 ) == 0,
+                "PA0 is reserved for UPDI" );
+// --------------------------------------------------------------------------
+
+static const T_GPIO_PIN pwmPins[ PWM_CHANNELS ] = { PWM_WO0_PIN, PA1, PA2 };
+
+static inline uint8_t pwm_used( uint8_t chan ) {
+    return ( chan < PWM_CHANNELS ) && ( PWM_USED_MASK & ( 1 << chan ) );
+}
+
+void TIMER_pwm_pins_cfg( T_GPIO_MODE mode ) {
+    for ( uint8_t ch = 0; ch < PWM_CHANNELS; ch++ ) {
+        if ( pwm_used( ch ) ) {
+            gpio_pin_LO( PWM_OUT_PORT, pwmPins[ ch ] );     // level while the output is disabled
+            gpio_pin_cfg( PWM_OUT_PORT, pwmPins[ ch ], mode );
+        }
+    }
+}
+
 void TIMER_pwm_init(void) {
-    // 1. Konfiguracja pin�w dla aktywnych kana��w
-#if USE_PWM_CH1
-    gpio_pin_cfg(PWM_OUT_PORT, PWM_OUT_PIN_OC1A, gpio_mode_output_PP);
+    TIMER_pwm_pins_cfg( gpio_mode_output_PP );
+
+#if PWM_WO0_ALT
+    PORTMUX.CTRLC |= PORTMUX_TCA00_bm;
 #endif
 
-#if USE_PWM_CH2
-    gpio_pin_cfg(PWM_OUT_PORT, PWM_OUT_PIN_OC1B, gpio_mode_output_PP);
-#endif
+    TCA0.SINGLE.CTRLB = TCA_SINGLE_WGMODE_SINGLESLOPE_gc;   // outputs stay disabled
+    TCA0.SINGLE.PER   = 255;
+    TCA0.SINGLE.CMP0  = 0;
+    TCA0.SINGLE.CMP1  = 0;
+    TCA0.SINGLE.CMP2  = 0;
 
-#if USE_PWM_CH3
-    gpio_pin_cfg(PWM_OUT_PORT, PWM_OUT_PIN_OC1C, gpio_mode_output_PP);
-#endif
-
-    // 2. Ustawienie trybu pracy: Single Slope PWM
-    TCA0.SINGLE.CTRLB = TCA_SINGLE_WGMODE_SINGLESLOPE_gc;
-
-    // 3. Ustawienie okresu (TOP = 255 dla rozdzielczo�ci 8-bit)
-    TCA0.SINGLE.PER = 255;
-
-    // 4. Wst�pne wype�nienie (50%) dla aktywnych kana��w
-#if USE_PWM_CH1
-    TCA0.SINGLE.CMP0 = 127;
-#endif
-
-#if USE_PWM_CH2
-    TCA0.SINGLE.CMP1 = 127;
-#endif
-
-#if USE_PWM_CH3
-    TCA0.SINGLE.CMP2 = 127;
-#endif
-
-    // 5. Automatyczne uruchomienie wyj�� dla aktywnych kana��w
-    uint8_t init_mask = 0;
-#if USE_PWM_CH1
-    init_mask |= TIMER_CH1_EN;
-#endif
-#if USE_PWM_CH2
-    init_mask |= TIMER_CH2_EN;
-#endif
-#if USE_PWM_CH3
-    init_mask |= TIMER_CH3_EN;
-#endif
-    TIMER_pwm_out_enable(init_mask);
-
-    // 6. Uruchomienie timera TCA0 (podzia� zegara przez 16)
+    // F_CPU / 16 / 256: ~814 Hz at 3.33 MHz
     TCA0.SINGLE.CTRLA = TCA_SINGLE_CLKSEL_DIV16_gc | TCA_SINGLE_ENABLE_bm;
 }
-void TIMER_pwm_stop(void) {
-	   TCA0.SINGLE.CTRLA &= TCA_SINGLE_CLKSEL_DIV16_gc | TCA_SINGLE_ENABLE_bm;
-}
 
-void TIMER_pwm_out_enable(uint8_t pwmOut) {
-#if USE_PWM_CH1
-    if ((pwmOut & TIMER_CH1_EN) == TIMER_CH1_EN) {
-        TCA0.SINGLE.CTRLB |= TCA_SINGLE_CMP0EN_bm;
-    }
-#endif
-
-#if USE_PWM_CH2
-    if ((pwmOut & TIMER_CH2_EN) == TIMER_CH2_EN) {
-        TCA0.SINGLE.CTRLB |= TCA_SINGLE_CMP1EN_bm;
-    }
-#endif
-
-#if USE_PWM_CH3
-    if ((pwmOut & TIMER_CH3_EN) == TIMER_CH3_EN) {
-        TCA0.SINGLE.CTRLB |= TCA_SINGLE_CMP2EN_bm;
-    }
-#endif
-}
-
-void TIMER_pwm_out_disable(uint8_t pwmOut) {
-#if USE_PWM_CH1
-    if ((pwmOut & TIMER_CH1_EN) == TIMER_CH1_EN) {
-        TCA0.SINGLE.CTRLB &= ~TCA_SINGLE_CMP0EN_bm;
-    }
-#endif
-
-#if USE_PWM_CH2
-    if ((pwmOut & TIMER_CH2_EN) == TIMER_CH2_EN) {
-        TCA0.SINGLE.CTRLB &= ~TCA_SINGLE_CMP1EN_bm;
-    }
-#endif
-
-#if USE_PWM_CH3
-    if ((pwmOut & TIMER_CH3_EN) == TIMER_CH3_EN) {
-        TCA0.SINGLE.CTRLB &= ~TCA_SINGLE_CMP2EN_bm;
-        // Opcjonalne zabezpieczenie stanu pinu po wy��czeniu PWM (np. dla LED_HI_POWER)
-        gpio_pin_HI(PWM_OUT_PORT, PWM_OUT_PIN_OC1C);
-    }
-#endif
-}
-
-void TIMER_pwm_write(uint8_t chan, uint8_t val) {
-    if (chan == TIMER_CHA) {
-#if USE_PWM_CH1
-        TCA0.SINGLE.CMP0 = val;
-#endif
-    } else if (chan == TIMER_CHB) {
-#if USE_PWM_CH2
-        TCA0.SINGLE.CMP1 = val;
-#endif
-    }
-    // Mo�esz doda� obs�ug� trzeciego kana�u np. przez now� sta�� lub rozszerzenie logiki
-    else if (chan == TIMER_CHC) { // Za��my, �e zdefiniujesz TIMER_CHC w pliku nag��wkowym
-#if USE_PWM_CH3
-        TCA0.SINGLE.CMP2 = val;
-#endif
+void TIMER_pwm_out_enable( uint8_t chan ) {
+    if ( pwm_used( chan ) ) {
+        TCA0.SINGLE.CTRLB |= ( TCA_SINGLE_CMP0EN_bm << chan );
     }
 }
 
-// Globalne zatrzymanie ca�ego modu�u TCA0
+void TIMER_pwm_out_disable( uint8_t chan ) {
+    if ( pwm_used( chan ) ) {
+        TCA0.SINGLE.CTRLB &= ~( TCA_SINGLE_CMP0EN_bm << chan );
+    }
+}
+
+void TIMER_pwm_write( uint8_t chan, uint8_t val ) {
+    if ( !pwm_used( chan ) ) return;
+
+    switch ( chan ) {
+        case PWM_WO0: TCA0.SINGLE.CMP0 = val; break;
+        case PWM_WO1: TCA0.SINGLE.CMP1 = val; break;
+        case PWM_WO2: TCA0.SINGLE.CMP2 = val; break;
+        default: break;
+    }
+}
+
 void TIMER_stop(void) {
     TCA0.SINGLE.CTRLA &= ~TCA_SINGLE_ENABLE_bm;
 }
 
-// Globalne uruchomienie modu�u TCA0 (z zachowaniem lub ustawieniem preskalera)
 void TIMER_start(void) {
     TCA0.SINGLE.CTRLA |= TCA_SINGLE_ENABLE_bm;
 }

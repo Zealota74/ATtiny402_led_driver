@@ -34,7 +34,8 @@ uses a small set of reusable, STM32-style peripheral wrappers (`gpio`, `tim`,
 ## Features
 
 - **Hardware PWM LED control**: TCA0 in single-slope mode, 8-bit resolution
-  (~814 Hz at 3.33 MHz). The code supports up to 3 PWM channels, selected at compile time.
+  (~814 Hz at 3.33 MHz). Each LED channel can be assigned to any of the 3 TCA0
+  outputs in one board header; pin conflicts are caught at compile time.
 - **Two LED channels** (*low-power* and *high-power*) with four modes:
   `LOW`, `HIGH`, `LOW + HIGH` and `ALL OFF`.
 - **6 gamma-corrected brightness levels**: `0, 8, 38, 68, 130, 255`
@@ -42,8 +43,9 @@ uses a small set of reusable, STM32-style peripheral wrappers (`gpio`, `tim`,
 - **Single-button UI** with gesture recognition: short press, double press,
   medium press, auto-repeat and very long press.
 - **Settings stored in EEPROM**: light mode and brightness level, guarded by a validity marker byte.
-- **Li-ion battery monitoring**: ADC0 with the internal 2.5 V reference, 4-sample
-  hardware accumulation and threshold hysteresis. When the battery is low, the
+- **Li-ion battery monitoring without a divider**: ADC0 measures the internal 1.1 V
+  reference against VDD to compute the supply voltage, with 4-sample hardware
+  accumulation and threshold hysteresis. When the battery is low, the
   LEDs are switched off and locked, and the status LED flashes a warning.
 - **Low-power support**: PWM and timer shutdown, button wake-up interrupt, Power-Down
   sleep helper and an RTC/PIT periodic wake-up source.
@@ -74,26 +76,47 @@ Main building blocks (as assumed by the firmware):
   driven directly by the TCA0 PWM outputs.
 - **Push button** to GND, using the internal pull-up.
 - **Status LED** on a GPIO for feedback (mode changes, low-battery warning).
-- **Battery sense divider**: 68 kΩ / 100 kΩ, which scales 4.2 V to 2.5 V (full
-  scale of the internal reference).
+- **No battery sense divider**: the supply voltage is measured internally, so the
+  MCU must be powered directly from the cell (no regulator in between).
 - **UPDI header** for programming (PA0, VDD, GND).
 
 ## Pinout
 
-ATtiny402, SOIC-8, as currently defined in
-[`inc/ATTINY402_led_driver.h`](inc/ATTINY402_led_driver.h) and
-[`libs/SW_AVR_PERIPHS/tim_defs.h`](libs/SW_AVR_PERIPHS/tim_defs.h):
+ATtiny402, SOIC-8, default assignment from
+[`inc/ATTINY402_led_driver.h`](inc/ATTINY402_led_driver.h):
 
 | Pin | Port | Function in firmware | Alternative function |
 |:---:|:----:|----------------------|----------------------|
-| 1 | VDD | Supply (battery) | |
-| 2 | PA6 | `LED_LO_POWER_PIN` (defined, not used yet) | TCB0 WO, AIN6 |
-| 3 | PA7 | Status LED (`LED_DIAG`) | TCA0 WO0 (alt), AIN7 |
-| 4 | PA1 | Push button `KEY1` (active low, pull-up) | TCA0 WO1 → PWM CH2 |
-| 5 | PA2 | PWM CH3 (disabled by default) | TCA0 WO2, AIN2 |
+| 1 | VDD | Supply (battery), measured internally | |
+| 2 | PA6 | Free | TCB0 WO, AIN6 |
+| 3 | PA7 | Status LED (`LED_DIAG`) | TCA0 WO0 alt (`PWM_WO0_ALT = 1`), AIN7 |
+| 4 | PA1 | Push button `KEY1` (active low, pull-up) | TCA0 WO1 (`PWM_WO1`) |
+| 5 | PA2 | **High-power LED PWM** (`LED_HI_PWM = PWM_WO2`) | AIN2 |
 | 6 | PA0 | UPDI programming / debug | |
-| 7 | PA3 | **PWM CH1** (TCA0 WO0), LED output | AIN3 |
+| 7 | PA3 | **Low-power LED PWM** (`LED_LO_PWM = PWM_WO0`) | AIN3 |
 | 8 | GND | Ground | |
+
+### Choosing the PWM pins
+
+The LED outputs can be moved to whichever TCA0 pin suits the PCB layout. All pins are
+assigned in [`inc/ATTINY402_led_driver.h`](inc/ATTINY402_led_driver.h); `tim.c`,
+`sw_ledlight_manage.c` and `rcc.c` only use the logical names.
+
+| Output | Pin |
+|--------|-----|
+| `PWM_WO0` | PA3 (pin 7), or PA7 (pin 3) with `PWM_WO0_ALT = 1` |
+| `PWM_WO1` | PA1 (pin 4) |
+| `PWM_WO2` | PA2 (pin 5) |
+| `PWM_NONE` | channel not fitted (single-LED board) |
+
+```c
+#define PWM_WO0_ALT   0
+#define LED_LO_PWM    PWM_WO0     // PA3
+#define LED_HI_PWM    PWM_WO2     // PA2
+```
+
+The build fails with a clear message (`_Static_assert` in `tim.c`) when both LEDs use the
+same output or a PWM pin collides with `KEY_PIN`, `LED_DIAG_PIN` or UPDI (PA0).
 
 ## User interface
 
@@ -118,20 +141,29 @@ INPUT_EVENTS_cb_reg( EVENT_KEY1_VLONG_PRESS,  LEDLIGHT_power_down  );
 
 ### Battery protection
 
-The battery voltage is measured on the divider (VREF = 2.5 V, 10-bit ADC):
+The supply voltage is measured without any external parts: the ADC uses VDD as its
+reference and converts the internal 1.1 V reference. With 4 accumulated samples:
 
-| Battery | Pin voltage | ADC code |
-|--------:|------------:|---------:|
-| 4.2 V | 2.50 V | 1023 |
-| 3.6 V | 2.14 V | 877 |
-| 3.4 V | 2.02 V | 828 |
-| 3.3 V | 1.96 V | 804 (`ADC_THRESHOLD_MAX`) |
-| ~3.2 V | ~1.91 V | 780 (`ADC_THRESHOLD_MIN`) |
+```
+RES = 4 · 1024 · 1.1 V / VDD        VDD [mV] = 4 505 600 / RES   (ADC_vdd_mv_get())
+```
 
-- If the reading stays below `ADC_THRESHOLD_MIN` for 10 consecutive conversions,
+| VDD | `RES` |
+|----:|------:|
+| 4.2 V | 1073 |
+| 3.6 V | 1252 |
+| 3.3 V | 1365 (`VDD_THRESHOLD_MAX_MV`) |
+| 3.2 V | 1408 (`VDD_THRESHOLD_MIN_MV`) |
+
+A conversion is started every 500 ms from the main loop.
+
+- If VDD stays below `VDD_THRESHOLD_MIN_MV` for 10 consecutive conversions,
   the LEDs are switched off and mode changes are locked. The status LED flashes 20 times.
-- If the reading stays above `ADC_THRESHOLD_MAX` for 10 consecutive conversions,
+- If VDD stays above `VDD_THRESHOLD_MAX_MV` for 10 consecutive conversions,
   the lock is released and the previous mode is restored.
+
+The internal reference has a tolerance of a few percent, so the thresholds may need a
+per-board correction of `ADC_INTREF_MV`.
 
 ## Firmware architecture
 
@@ -169,18 +201,18 @@ flowchart TD
 | CLK_MAIN | OSC20M / 6 = 3.33 MHz (`F_CPU = 3333333UL`); 1, 8, 16 and 20 MHz are also handled |
 | TCA0 | Single-slope PWM, `PER = 255`, CLK/16, about 814 Hz; also clocks TCB0 |
 | TCB0 | Periodic interrupt every 10 ms (`CCMP = 2083`), system tick |
-| ADC0 + VREF | 2.5 V internal reference, CLK/32 (~104 kHz), 4-sample accumulation, RESRDY interrupt |
+| ADC0 + VREF | VDD reference, input = internal 1.1 V, CLK/32 (~104 kHz), 4-sample accumulation, RESRDY interrupt |
 | RTC / PIT | Periodic wake-up helpers (`WDT_enable()` / `WDT_disable()`) |
 | SLPCTRL | Power-Down sleep helper (`RCC_sleep_enable()`) |
 | EEPROM | 3 bytes: validity marker, brightness index, light mode |
-| Flash / RAM | ~2.0 kB / 4 kB flash, ~52 B / 256 B RAM (avr-gcc `-Os`, `--gc-sections`) |
+| Flash / RAM | ~2.5 kB / 4 kB flash, ~55 B / 256 B RAM (command line below, `--gc-sections`) |
 
 ## Repository layout
 
 ```
 ├── Attiny402_led_driver.c      # main(): init + cooperative main loop
 ├── inc/
-│   ├── ATTINY402_led_driver.h  # board pin definitions
+│   ├── ATTINY402_led_driver.h  # board configuration: all pin assignments
 │   ├── sw_mcu_conf.h           # common macros (SET_BIT, MODIFY_REG, INLINE…)
 │   └── bool.h
 ├── libs/
@@ -250,21 +282,14 @@ EEPROM defaults are created by the firmware on first boot, so flashing the `.eep
 | Setting | Location | Default |
 |---------|----------|---------|
 | CPU clock | project settings / `F_CPU` | `3333333UL` |
-| Active PWM channels | `USE_PWM_CH1..3` in `tim.h` | CH1 only |
-| Board pins | `inc/ATTINY402_led_driver.h` | see [Pinout](#pinout) |
+| Board pins, LED PWM outputs | `inc/ATTINY402_led_driver.h` | see [Pinout](#pinout) |
 | Gesture timing | `libs/SW_INPUT/KEYBOARD/keyboard.h` | see [User interface](#user-interface) |
 | Brightness table | `BrightGamma[]` in `sw_ledlight_manage.c` | `0, 8, 38, 68, 130, 255` |
-| Battery thresholds | `ADC_THRESHOLD_MIN/MAX` in `adc.h` | 780 / 804 |
+| Battery thresholds | `VDD_THRESHOLD_MIN_MV/MAX_MV` in `adc.h` | 3200 / 3300 mV |
 
 ## Project status / TODO
 
-- [ ] Final pin assignment. The board header, the PWM mapping and the ADC input
-      currently overlap: PA3 is both PWM CH1 and ADC input AIN3, PA1 is both the button
-      and PWM CH2, and `BAT_SENS_PIN = PA4` does not exist on the SOIC-8 package.
-- [ ] Enable the second LED channel. `LED_HIGH_POWER` uses PWM CH2, which is disabled
-      (`USE_PWM_CH2 = 0`).
-- [ ] Enable battery monitoring (`ADC_init()` is commented out in `main()`) and scale the
-      thresholds for 4-sample accumulation (`ADC0.RES` holds the sum of 4 samples).
+- [ ] Verify the default pin assignment and the battery thresholds on real hardware.
 - [ ] Hook up Power-Down sleep, wake-up (`RCC_sleep_enable()`, `LEDLIGHT_wakeup()`) and
       a PORTA wake-up ISR.
 - [ ] Call `EEPROM_update()` when settings change.

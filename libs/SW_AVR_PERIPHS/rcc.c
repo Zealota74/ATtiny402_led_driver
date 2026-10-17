@@ -69,9 +69,7 @@ static inline void RCC_sleep_cpu(void) {
 void RCC_sleep_enable( uint8_t mode ) {
     gpio_pin_cfg( KEY_PORT,         KEY_PIN,            gpio_mode_in_floating );
     gpio_pin_cfg( LED_DIAG_PORT,    LED_DIAG_PIN,       gpio_mode_in_floating );
-    gpio_pin_cfg( PWM_OUT_PORT,     PWM_OUT_PIN_OC1A,   gpio_mode_in_floating );
-    gpio_pin_cfg( PWM_OUT_PORT,     PWM_OUT_PIN_OC1B,   gpio_mode_in_floating );
-    gpio_pin_cfg( PWM_OUT_PORT,     PWM_OUT_PIN_OC1C,   gpio_mode_in_floating );
+    TIMER_pwm_pins_cfg( gpio_mode_in_floating );
 
     powerState = STATE_PCINT_WAKE;
     ADC_disable();

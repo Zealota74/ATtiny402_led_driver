@@ -19,8 +19,8 @@
 #define LOCK_MODE_OFF       false
 
 // Mapowanie logicznych diod na kana³y sprzêtowe Timera A (TCA0) z modu³u tim.h
-#define LED_HIGH_POWER      TIMER_CHB // Mapowany na CMP1 (PA2) lub wed³ug konfiguracji tim.c
-#define LED_LOW_POWER       TIMER_CHA // Mapowany na CMP0 (PA1)
+#define LED_HIGH_POWER      LED_HI_PWM // ATTINY402_led_driver.h
+#define LED_LOW_POWER       LED_LO_PWM // ATTINY402_led_driver.h
 
 enum {
     LED_BRIGHT_OFF = 0,
